@@ -7,23 +7,22 @@ package frc.robot.commands;
 import frc.robot.subsystems.Drivetrain;
 import edu.wpi.first.wpilibj2.command.CommandBase;
 import edu.wpi.first.wpilibj2.command.button.CommandXboxController;
-//import edu.wpi.first.wpilibj2.command.button.Trigger;
 
-import java.security.cert.PKIXBuilderParameters;
 import java.util.function.Supplier;
 
-import edu.wpi.first.math.controller.HolonomicDriveController;
 import edu.wpi.first.math.controller.PIDController;
-import edu.wpi.first.math.controller.ProfiledPIDController;
 import edu.wpi.first.math.geometry.Translation2d;
-import edu.wpi.first.math.trajectory.TrapezoidProfile;
 
 public class Maneuver extends CommandBase {
   private final Drivetrain m_drivetrain;
-  private final Supplier<Double> m_xaxisSpeedSupplier;
-  private final Supplier<Double> m_yaxisRotateSupplier;
+  private final Supplier<Double> control_XAxisSupplier;
+  private final Supplier<Double> control_YAxisSupplier;
   private final CommandXboxController control;
-  private final HolonomicDriveController h_control;
+  private final PIDController PIDControl = new PIDController(0.2, 0.0,  0.0 );
+  private final double speedDampener = 0.6;
+  private final double maxAngleRange = 35;
+  private final double leftControlAngleOffset = 45;
+  private double activeOffset = 0;
 
   /**
    * Creates a new ArcadeDrive. This command will drive your robot according to
@@ -38,43 +37,63 @@ public class Maneuver extends CommandBase {
    */
   public Maneuver(
       Drivetrain drivetrain,
-      Supplier<Double> xaxisSpeedSupplier,
-      Supplier<Double> yaxisRotateSupplier,
       CommandXboxController commandXbox) {
     m_drivetrain = drivetrain;
-    m_xaxisSpeedSupplier = xaxisSpeedSupplier;
-    m_yaxisRotateSupplier = yaxisRotateSupplier;
     control = commandXbox;
-    h_control = new HolonomicDriveController(
-        new PIDController(1, 0, 0),
-        new PIDController(1, 0, 0),
-        new ProfiledPIDController(1, 0, 0,
-            new TrapezoidProfile.Constraints(6.28, 3.14)));
+
+    control_XAxisSupplier = () -> control.getLeftX();
+    control_YAxisSupplier = () -> control.getLeftY();
+
+    this.PIDControl.setTolerance(2);
+    PIDControl.enableContinuousInput(-180, 180);
+    
+
+
+    
+    addRequirements(drivetrain);
   }
 
   // Called when the command is initially scheduled.
   @Override
   public void initialize() {
+
   }
 
   // Called every time the scheduler runs while the command is scheduled.
   @Override
   public void execute() {
-    // System.out.print(control.hashCode());
+    double leftX = control_XAxisSupplier.get();
+    double leftY = control_YAxisSupplier.get();
 
-    double x = m_xaxisSpeedSupplier.get();
-    double y = m_yaxisRotateSupplier.get();
-    var pt = new Translation2d(x, y);
-    double speed;
-    double angle;
+    var point = new Translation2d(leftX, leftY);
 
-    if (pt.getAngle().getDegrees() == m_drivetrain.getGyroAngleZ()) {
-      speed = pt.getNorm() * (y >= 0 ? -.5)
+    double leftAngle = point.getAngle().getDegrees() - leftControlAngleOffset;
+    double leftNormal = point.getNorm();
+    
+    double zOrientation = (m_drivetrain.getGyroAngleZ() % 360) + activeOffset; // Oh so we don't start over after 360.. makes total sense to me
+
+    double angleRange = Math.abs(zOrientation - leftAngle);
+
+    double speed = 0;
+    double rotation = 0;
+
+    if (leftAngle == 0) {
+      activeOffset = zOrientation;
+    }
+
+
+    PIDControl.setSetpoint(leftAngle);
+
+    speed = leftNormal * speedDampener;
+
+    if (angleRange >= maxAngleRange) {
+      rotation = -PIDControl.calculate(zOrientation);
     }
     
-    speed = pt.getNorm() * (y >= 0 ? -.5 : .5);
-    // speed = pt.getNorm();
-    m_drivetrain.arcadeDrive(speed, 0);
+
+    m_drivetrain.arcadeDrive(speed, rotation);
+
+    
   }
 
   // Called once the command ends or is interrupted.
