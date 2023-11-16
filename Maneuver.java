@@ -8,7 +8,9 @@ import frc.robot.subsystems.Drivetrain;
 import edu.wpi.first.wpilibj2.command.CommandBase;
 import edu.wpi.first.wpilibj2.command.button.CommandXboxController;
 
+import java.io.Console;
 import java.util.function.Supplier;
+import java.util.function.ToIntFunction;
 
 import edu.wpi.first.math.controller.PIDController;
 import edu.wpi.first.math.geometry.Translation2d;
@@ -19,10 +21,12 @@ public class Maneuver extends CommandBase {
   private final Supplier<Double> control_YAxisSupplier;
   private final CommandXboxController control;
   private final PIDController PIDControl = new PIDController(0.2, 0.0,  0.0 );
-  private final double speedDampener = 0.6;
+  private final double speedDampener = .75;
   private final double maxAngleRange = 35;
-  private final double leftControlAngleOffset = 45;
+  private final double leftControlAngleOffset = 0;
   private double activeOffset = 0;
+  private double initXOffset;
+  private double initYOffset;
 
   /**
    * Creates a new ArcadeDrive. This command will drive your robot according to
@@ -44,6 +48,9 @@ public class Maneuver extends CommandBase {
     control_XAxisSupplier = () -> control.getLeftX();
     control_YAxisSupplier = () -> control.getLeftY();
 
+    initXOffset = control_XAxisSupplier.get();
+    initYOffset = control_YAxisSupplier.get();
+
     this.PIDControl.setTolerance(2);
     PIDControl.enableContinuousInput(-180, 180);
     
@@ -62,8 +69,8 @@ public class Maneuver extends CommandBase {
   // Called every time the scheduler runs while the command is scheduled.
   @Override
   public void execute() {
-    double leftX = control_XAxisSupplier.get();
-    double leftY = control_YAxisSupplier.get();
+    double leftX = control_XAxisSupplier.get() - initXOffset;
+    double leftY = control_YAxisSupplier.get() - initYOffset;
 
     var point = new Translation2d(leftX, leftY);
 
@@ -76,7 +83,8 @@ public class Maneuver extends CommandBase {
 
     double speed = 0;
     double rotation = 0;
-
+    
+    
     if (leftAngle == 0) {
       activeOffset = zOrientation;
     }
