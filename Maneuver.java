@@ -9,6 +9,8 @@ import edu.wpi.first.wpilibj2.command.CommandBase;
 import edu.wpi.first.wpilibj2.command.button.CommandXboxController;
 
 import java.io.Console;
+import java.lang.ModuleLayer.Controller;
+import java.time.OffsetDateTime;
 import java.util.function.Supplier;
 import java.util.function.ToIntFunction;
 
@@ -20,13 +22,13 @@ public class Maneuver extends CommandBase {
   private final Supplier<Double> control_XAxisSupplier;
   private final Supplier<Double> control_YAxisSupplier;
   private final CommandXboxController control;
-  private final PIDController PIDControl = new PIDController(0.2, 0.0,  0.0 );
+  private final PIDController PIDControl = new PIDController(0.01, 0.0,  0.0 );
   private final double speedDampener = .75;
-  private final double maxAngleRange = 35;
-  private final double leftControlAngleOffset = 0;
-  private double activeOffset = 0;
+  private final Supplier<Boolean> leftDown;
   private double initXOffset;
   private double initYOffset;
+  private double initAngle;
+  private double activeOffset;
 
   /**
    * Creates a new ArcadeDrive. This command will drive your robot according to
@@ -47,10 +49,13 @@ public class Maneuver extends CommandBase {
 
     control_XAxisSupplier = () -> control.getLeftX();
     control_YAxisSupplier = () -> control.getLeftY();
+    leftDown = () -> control.button(9).getAsBoolean();
 
     initXOffset = control_XAxisSupplier.get();
     initYOffset = control_YAxisSupplier.get();
-
+    
+    var point = new Translation2d(control.getLeftX(), control.getLeftY());
+    initAngle = point.getAngle().getDegrees();
     this.PIDControl.setTolerance(2);
     PIDControl.enableContinuousInput(-180, 180);
     
@@ -69,44 +74,39 @@ public class Maneuver extends CommandBase {
   // Called every time the scheduler runs while the command is scheduled.
   @Override
   public void execute() {
+    if (control.a().getAsBoolean()) {
+      m_drivetrain.resetGyro();
+    }
+
     double leftX = control_XAxisSupplier.get() - initXOffset;
     double leftY = control_YAxisSupplier.get() - initYOffset;
 
     var point = new Translation2d(leftX, leftY);
 
-    double leftAngle = point.getAngle().getDegrees() - leftControlAngleOffset;
+    double leftAngle = point.getAngle().getDegrees(); // + activeOffset
     double leftNormal = point.getNorm();
     
-    double zOrientation = (m_drivetrain.getGyroAngleZ() % 360) + activeOffset; // Oh so we don't start over after 360.. makes total sense to me
-
-    double angleRange = Math.abs(zOrientation - leftAngle);
+    double zOrientation = Math.IEEEremainder(m_drivetrain.getGyroAngleZ(), 360);
 
     double speed = 0;
     double rotation = 0;
-    
-    
-    if (leftAngle == 0) {
-      activeOffset = zOrientation;
-    }
-
-
+    System.out.print(leftAngle);
+    System.out.println();
     PIDControl.setSetpoint(leftAngle);
 
-    speed = leftNormal * speedDampener;
+    speed = leftNormal * speedDampener * (leftDown.get() ? -1 : 1);
 
-    if (angleRange >= maxAngleRange) {
-      rotation = -PIDControl.calculate(zOrientation);
-    }
+    var potentialRotation = -PIDControl.calculate(zOrientation);
+
+    rotation = (PIDControl.atSetpoint() ? 0 : potentialRotation);
     
-
     m_drivetrain.arcadeDrive(speed, rotation);
-
-    
   }
 
   // Called once the command ends or is interrupted.
   @Override
   public void end(boolean interrupted) {
+    m_drivetrain.arcadeDrive(0, 0);
   }
 
   // Returns true when the command should end.
